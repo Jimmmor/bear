@@ -48,14 +48,34 @@ def get_top_coins_coingecko(n=50):
     r.raise_for_status()
     data = r.json()
     results = []
-    for c in data:
-        # symbol might be 'btc' -> make upper
-        sym = c.get("symbol", "").upper()
-        name = c.get("name", "")
-        # Yahoo typically uses SYMBOL-USD (e.g., BTC-USD)
-        yahoo_ticker = f"{sym}-USD"
-        results.append((name, yahoo_ticker))
-    return results
+    for name, ticker in coins:
+        metrics = None
+        score, reasons = 0, []
+        try:
+            df = fetch_ohlcv_yahoo(ticker, period=period, interval=interval)
+            if df is not None and len(df) >= 50:
+                metrics = analyze_ohlcv(df)
+                score, reasons = score_signal(metrics, rsi_thresh, vol_mult)
+        except Exception:
+            pass  # bij fout blijven score=0 en reasons=[]
+    
+        # Voeg altijd een consistente dict toe
+        results.append({
+            "name": name,
+            "ticker": ticker,
+            "score": score,
+            "reasons": ", ".join(reasons) if reasons else "no_signal",
+            "close": metrics.get("close") if metrics else np.nan,
+            "rsi": metrics.get("rsi") if metrics else np.nan,
+            "bb_high": metrics.get("bb_high") if metrics else np.nan,
+            "vol": metrics.get("vol") if metrics else np.nan,
+            "avg_vol": metrics.get("avg_vol") if metrics else np.nan,
+            "datetime": metrics.get("datetime") if metrics else np.nan,
+        })
+    
+    df_out = pd.DataFrame(results)
+    df_out = df_out.sort_values(by=["score","rsi"], ascending=[False, False])
+    
 
 @st.cache_data(ttl=120)
 def fetch_ohlcv_yahoo(ticker, period="3mo", interval="1h"):
