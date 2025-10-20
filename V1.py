@@ -61,16 +61,66 @@ def fetch_ohlcv_yahoo(ticker, period="7d", interval="1h"):
         return None
 
 def calc_rsi(series, period=14):
-    delta = series.diff()
-    gain = delta.where(delta > 0, 0).rolling(period).mean()
-    loss = -delta.where(delta < 0, 0).rolling(period).mean()
-    rs = gain / loss
-    return 100 - (100 / (1 + rs))
+    """Bereken RSI als pandas Series met veilige fallback."""
+    try:
+        if series is None or len(series) < period:
+            return pd.Series(np.nan, index=series.index if series is not None else range(period))
+        s = pd.to_numeric(series, errors='coerce').copy()
+        delta = s.diff()
+        gain = delta.clip(lower=0).rolling(window=period).mean()
+        loss = -delta.clip(upper=0).rolling(window=period).mean()
+        rs = gain / loss
+        rsi = 100 - (100 / (1 + rs))
+        # Zorg dat output een Series is met dezelfde index
+        if not isinstance(rsi, pd.Series):
+            rsi = pd.Series(rsi, index=series.index)
+        return rsi
+    except Exception:
+        # Als er iets misgaat, geef een lege RSI terug met NaN
+        return pd.Series(np.nan, index=series.index if series is not None else range(period))
+
 
 def analyze_ohlcv(df):
-    """Bereken indicatoren en geef laatste waarden terug als floats"""
-    if df is None or df.empty or len(df) < 20:
-        return {k: np.nan for k in ["close", "rsi", "bb_high", "vol", "avg_vol", "datetime"]}
+    """Bereken indicatoren en geef laatste waarden terug als floats."""
+    try:
+        if df is None or len(df) < 25:
+            raise ValueError("Te weinig data")
+
+        df = df.copy()
+        df["Close"] = pd.to_numeric(df.get("Close", np.nan), errors="coerce")
+        df["Volume"] = pd.to_numeric(df.get("Volume", np.nan), errors="coerce")
+
+        # RSI
+        df["rsi"] = calc_rsi(df["Close"])
+
+        # Bollinger Bands
+        df["ma20"] = df["Close"].rolling(20).mean()
+        df["std"] = df["Close"].rolling(20).std()
+        df["bb_high"] = df["ma20"] + 2 * df["std"]
+
+        # Volume gemiddeld
+        df["vol_avg"] = df["Volume"].rolling(20).mean()
+
+        last = df.iloc[-1]
+
+        return {
+            "close": float(last.get("Close", np.nan)),
+            "rsi": float(last.get("rsi", np.nan)),
+            "bb_high": float(last.get("bb_high", np.nan)),
+            "vol": float(last.get("Volume", np.nan)),
+            "avg_vol": float(last.get("vol_avg", np.nan)),
+            "datetime": last.name
+        }
+    except Exception:
+        # Als iets misgaat, return lege waarden zodat de app niet crasht
+        return {
+            "close": np.nan,
+            "rsi": np.nan,
+            "bb_high": np.nan,
+            "vol": np.nan,
+            "avg_vol": np.nan,
+            "datetime": np.nan
+        }
 
     df["rsi"] = calc_rsi(df["Close"])
     df["ma20"] = df["Close"].rolling(20).mean()
