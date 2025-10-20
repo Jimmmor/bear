@@ -27,29 +27,27 @@ st.sidebar.caption("Laatste update: " + datetime.now().strftime("%Y-%m-%d %H:%M:
 # FUNCTIES
 # ---------------------------------------------
 def get_top_coins_coingecko(n=50):
-    """Haalt top n coins op uit CoinGecko en vertaalt ze naar Yahoo-tickers"""
-    url = "https://api.coingecko.com/api/v3/coins/markets"
-    params = {
-        "vs_currency": "usd",
-        "order": "market_cap_desc",
-        "per_page": n,
-        "page": 1,
-        "sparkline": False,
-    }
-    try:
-        r = requests.get(url, params=params, timeout=20)
-        r.raise_for_status()
-        data = r.json()
-        results = []
-        for c in data:
-            name = c.get("name", "")
-            symbol = c.get("symbol", "").upper()
-            yahoo_ticker = f"{symbol}-USD"
-            results.append((name, yahoo_ticker))
-        return results
-    except Exception as e:
-        st.error(f"❌ Fout bij ophalen CoinGecko: {e}")
-        return []
+    base_list = [
+        ("Bitcoin", "BTC-USD"), ("Ethereum", "ETH-USD"), ("BNB", "BNB-USD"),
+        ("Solana", "SOL-USD"), ("XRP", "XRP-USD"), ("Dogecoin", "DOGE-USD"),
+        ("Cardano", "ADA-USD"), ("Avalanche", "AVAX-USD"), ("Polkadot", "DOT-USD"),
+        ("Chainlink", "LINK-USD"), ("Uniswap", "UNI-USD"), ("Litecoin", "LTC-USD"),
+        ("Polygon", "MATIC-USD"), ("Internet Computer", "ICP-USD"),
+        ("Aptos", "APT-USD"), ("Near Protocol", "NEAR-USD"),
+        ("Arbitrum", "ARB-USD"), ("Stellar", "XLM-USD"), ("Filecoin", "FIL-USD"),
+        ("Cosmos", "ATOM-USD"), ("VeChain", "VET-USD"), ("Optimism", "OP-USD"),
+        ("Immutable", "IMX-USD"), ("SUI", "SUI-USD"), ("Maker", "MKR-USD"),
+        ("Render", "RNDR-USD"), ("The Graph", "GRT-USD"), ("Algorand", "ALGO-USD"),
+        ("Hedera", "HBAR-USD"), ("Aave", "AAVE-USD"), ("Quant", "QNT-USD"),
+        ("Tezos", "XTZ-USD"), ("Theta", "THETA-USD"), ("EOS", "EOS-USD"),
+        ("Kava", "KAVA-USD"), ("Flow", "FLOW-USD"), ("Gala", "GALA-USD"),
+        ("Chiliz", "CHZ-USD"), ("Zcash", "ZEC-USD"), ("Curve DAO", "CRV-USD"),
+        ("Synthetix", "SNX-USD"), ("Fantom", "FTM-USD"), ("1inch", "1INCH-USD"),
+        ("Balancer", "BAL-USD"), ("Dash", "DASH-USD"), ("Enjin Coin", "ENJ-USD"),
+        ("Lido DAO", "LDO-USD"), ("Bonk", "BONK-USD"), ("JasmyCoin", "JASMY-USD"),
+        ("Pepe", "PEPE-USD"), ("Shiba Inu", "SHIB-USD"),
+    ]
+    return base_list[:n]
 
 def fetch_ohlcv_yahoo(ticker, period="7d", interval="1h"):
     """Haalt OHLCV-data op via Yahoo Finance"""
