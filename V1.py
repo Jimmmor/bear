@@ -3,14 +3,14 @@ import requests
 import pandas as pd
 import numpy as np
 import yfinance as yf
-from datetime import datetime, timedelta
+from datetime import datetime
 
 # ---------------------------------------------
 # APP INFO
 # ---------------------------------------------
-st.set_page_config(page_title="Crypto Short Scanner v2", layout="wide")
-st.title("📉 Crypto Short Scanner v2")
-st.caption("Selecteert potentiële short-kansen op basis van RSI, Bollinger Bands en volume-analyse (Yahoo Finance).")
+st.set_page_config(page_title="Crypto Short Scanner v2.1", layout="wide")
+st.title("📉 Crypto Short Scanner v2.1")
+st.caption("Analyseert top coins voor mogelijke short-signalen via RSI, Bollinger Bands & Volume (Yahoo Finance).")
 
 # ---------------------------------------------
 # INSTELLINGEN
@@ -70,7 +70,7 @@ def calc_rsi(series, period=14):
     return 100 - (100 / (1 + rs))
 
 def analyze_ohlcv(df):
-    """Bereken indicatoren"""
+    """Bereken indicatoren en geef laatste waarden terug als floats"""
     df["rsi"] = calc_rsi(df["Close"])
     df["ma20"] = df["Close"].rolling(20).mean()
     df["std"] = df["Close"].rolling(20).std()
@@ -79,11 +79,11 @@ def analyze_ohlcv(df):
 
     last = df.iloc[-1]
     return {
-        "close": last["Close"],
-        "rsi": last["rsi"],
-        "bb_high": last["bb_high"],
-        "vol": last["Volume"],
-        "avg_vol": last["vol_avg"],
+        "close": float(last["Close"]) if pd.notna(last["Close"]) else np.nan,
+        "rsi": float(last["rsi"]) if pd.notna(last["rsi"]) else np.nan,
+        "bb_high": float(last["bb_high"]) if pd.notna(last["bb_high"]) else np.nan,
+        "vol": float(last["Volume"]) if pd.notna(last["Volume"]) else np.nan,
+        "avg_vol": float(last["vol_avg"]) if pd.notna(last["vol_avg"]) else np.nan,
         "datetime": last.name
     }
 
@@ -91,15 +91,23 @@ def score_signal(metrics, rsi_thresh, vol_mult):
     """Bereken short-score op basis van condities"""
     score = 0
     reasons = []
-    if metrics["rsi"] > rsi_thresh:
+
+    rsi = metrics.get("rsi", np.nan)
+    close = metrics.get("close", np.nan)
+    bb_high = metrics.get("bb_high", np.nan)
+    vol = metrics.get("vol", np.nan)
+    avg_vol = metrics.get("avg_vol", np.nan)
+
+    if pd.notna(rsi) and rsi > rsi_thresh:
         score += 1
         reasons.append("RSI hoog")
-    if metrics["close"] > metrics["bb_high"]:
+    if pd.notna(close) and pd.notna(bb_high) and close > bb_high:
         score += 1
         reasons.append("Bollinger bovenkant")
-    if metrics["vol"] > metrics["avg_vol"] * vol_mult:
+    if pd.notna(vol) and pd.notna(avg_vol) and vol > avg_vol * vol_mult:
         score += 1
         reasons.append("Hoog volume")
+
     return score, reasons
 
 # ---------------------------------------------
