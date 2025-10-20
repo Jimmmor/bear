@@ -57,8 +57,8 @@ st.markdown("---")
 # Sidebar
 st.sidebar.header("⚙️ Scanner Settings")
 top_n = st.sidebar.slider("📊 Number of Coins", 10, 100, 50, 5)
-timeframe = st.sidebar.selectbox("⏱️ Timeframe", ["1h", "4h", "1d"], index=1)
-period_map = {"1h": "7d", "4h": "30d", "1d": "90d"}
+timeframe = st.sidebar.selectbox("⏱️ Timeframe", ["15m", "1h", "4h", "1d"], index=2)
+period_map = {"15m": "5d", "1h": "7d", "4h": "30d", "1d": "60d"}
 period = period_map[timeframe]
 
 st.sidebar.markdown("---")
@@ -100,7 +100,7 @@ def get_top_coins(n=50):
 
 # Technical indicators
 def calculate_indicators(df):
-    if df is None or len(df) < 50:
+    if df is None or len(df) < 30:
         return None
     
     df = df.copy()
@@ -109,11 +109,12 @@ def calculate_indicators(df):
     low = df['Low']
     volume = df['Volume']
     
-    # RSI
+    # RSI (gebruik kortere periode als er weinig data is)
+    rsi_period = min(14, len(df) // 3)
     delta = close.diff()
-    gain = delta.clip(lower=0).rolling(14).mean()
-    loss = -delta.clip(upper=0).rolling(14).mean()
-    rs = gain / loss
+    gain = delta.clip(lower=0).rolling(rsi_period).mean()
+    loss = -delta.clip(upper=0).rolling(rsi_period).mean()
+    rs = gain / (loss + 1e-10)  # Voeg kleine waarde toe om deling door 0 te voorkomen
     df['rsi'] = 100 - (100 / (1 + rs))
     
     # MACD
@@ -123,11 +124,12 @@ def calculate_indicators(df):
     df['macd_signal'] = df['macd'].ewm(span=9).mean()
     df['macd_hist'] = df['macd'] - df['macd_signal']
     
-    # EMAs
-    df['ema_9'] = close.ewm(span=9).mean()
-    df['ema_20'] = close.ewm(span=20).mean()
-    df['ema_50'] = close.ewm(span=50).mean()
-    df['ema_200'] = close.ewm(span=200).mean()
+    # EMAs (pas aan op basis van beschikbare data)
+    min_len = len(df)
+    df['ema_9'] = close.ewm(span=min(9, min_len//4)).mean()
+    df['ema_20'] = close.ewm(span=min(20, min_len//3)).mean()
+    df['ema_50'] = close.ewm(span=min(50, min_len//2)).mean() if min_len > 50 else close.ewm(span=20).mean()
+    df['ema_200'] = close.ewm(span=min(200, min_len-10)).mean() if min_len > 200 else df['ema_50']
     
     # Bollinger Bands
     df['bb_mid'] = close.rolling(20).mean()
@@ -149,11 +151,11 @@ def calculate_indicators(df):
     return df
 
 def calculate_bearish_probability(df, weights):
-    if df is None or len(df) < 50:
+    if df is None or len(df) < 30:
         return None
     
     last = df.iloc[-1]
-    prev_5 = df.iloc[-5]
+    prev_5 = df.iloc[-min(5, len(df)-1)]
     
     prob_components = {}
     total_prob = 0
@@ -258,7 +260,8 @@ if st.session_state.scan_results is None:
         
         try:
             df = yf.download(ticker, period=period, interval=timeframe, progress=False)
-            if df.empty or len(df) < 50:
+            if df.empty or len(df) < 30:
+                status.text(f"⚠️ {name}: Not enough data")
                 continue
             
             df = calculate_indicators(df)
@@ -273,7 +276,8 @@ if st.session_state.scan_results is None:
                     'indicators': analysis['indicators'],
                     'df': df
                 })
-        except:
+        except Exception as e:
+            status.text(f"❌ {name}: Error - {str(e)[:30]}")
             continue
     
     progress_bar.empty()
