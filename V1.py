@@ -1,5 +1,4 @@
 import streamlit as st
-import requests
 import pandas as pd
 import numpy as np
 import yfinance as yf
@@ -8,14 +7,14 @@ from datetime import datetime
 # ---------------------------------------------
 # APP INFO
 # ---------------------------------------------
-st.set_page_config(page_title="Crypto Short Scanner v2.1", layout="wide")
-st.title("📉 Crypto Short Scanner v2.1")
+st.set_page_config(page_title="Crypto Short Scanner v2.2", layout="wide")
+st.title("📉 Crypto Short Scanner v2.2")
 st.caption("Analyseert top coins voor mogelijke short-signalen via RSI, Bollinger Bands & Volume (Yahoo Finance).")
 
 # ---------------------------------------------
 # INSTELLINGEN
 # ---------------------------------------------
-top_n = st.sidebar.slider("Aantal top coins (CoinGecko)", 10, 100, 50)
+top_n = st.sidebar.slider("Aantal top coins", 10, 100, 50)
 period = st.sidebar.selectbox("Periode", ["7d", "14d", "30d"])
 interval = st.sidebar.selectbox("Interval", ["1h", "2h", "4h"])
 rsi_thresh = st.sidebar.slider("RSI overbought-grens", 50, 90, 70)
@@ -27,6 +26,7 @@ st.sidebar.caption("Laatste update: " + datetime.now().strftime("%Y-%m-%d %H:%M:
 # FUNCTIES
 # ---------------------------------------------
 def get_top_coins_coingecko(n=50):
+    """Statische lijst van top coins om API-fouten te vermijden."""
     base_list = [
         ("Bitcoin", "BTC-USD"), ("Ethereum", "ETH-USD"), ("BNB", "BNB-USD"),
         ("Solana", "SOL-USD"), ("XRP", "XRP-USD"), ("Dogecoin", "DOGE-USD"),
@@ -53,7 +53,7 @@ def fetch_ohlcv_yahoo(ticker, period="7d", interval="1h"):
     """Haalt OHLCV-data op via Yahoo Finance"""
     try:
         df = yf.download(ticker, period=period, interval=interval, progress=False)
-        if df.empty:
+        if df.empty or "Close" not in df.columns:
             return None
         df["datetime"] = df.index
         return df
@@ -62,26 +62,30 @@ def fetch_ohlcv_yahoo(ticker, period="7d", interval="1h"):
 
 def calc_rsi(series, period=14):
     delta = series.diff()
-    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
+    gain = delta.where(delta > 0, 0).rolling(period).mean()
+    loss = -delta.where(delta < 0, 0).rolling(period).mean()
     rs = gain / loss
     return 100 - (100 / (1 + rs))
 
 def analyze_ohlcv(df):
     """Bereken indicatoren en geef laatste waarden terug als floats"""
+    if df is None or df.empty or len(df) < 20:
+        return {k: np.nan for k in ["close", "rsi", "bb_high", "vol", "avg_vol", "datetime"]}
+
     df["rsi"] = calc_rsi(df["Close"])
     df["ma20"] = df["Close"].rolling(20).mean()
     df["std"] = df["Close"].rolling(20).std()
     df["bb_high"] = df["ma20"] + 2 * df["std"]
     df["vol_avg"] = df["Volume"].rolling(20).mean()
 
-    last = df.iloc[-1]
+    last = df.tail(1).iloc[0]
+
     return {
-        "close": float(last["Close"]) if pd.notna(last["Close"]) else np.nan,
-        "rsi": float(last["rsi"]) if pd.notna(last["rsi"]) else np.nan,
-        "bb_high": float(last["bb_high"]) if pd.notna(last["bb_high"]) else np.nan,
-        "vol": float(last["Volume"]) if pd.notna(last["Volume"]) else np.nan,
-        "avg_vol": float(last["vol_avg"]) if pd.notna(last["vol_avg"]) else np.nan,
+        "close": float(last.get("Close", np.nan)),
+        "rsi": float(last.get("rsi", np.nan)),
+        "bb_high": float(last.get("bb_high", np.nan)),
+        "vol": float(last.get("Volume", np.nan)),
+        "avg_vol": float(last.get("vol_avg", np.nan)),
         "datetime": last.name
     }
 
@@ -114,7 +118,7 @@ def score_signal(metrics, rsi_thresh, vol_mult):
 coins = get_top_coins_coingecko(top_n)
 
 if not coins:
-    st.warning("⚠️ Geen coins gevonden van CoinGecko, probeer later opnieuw.")
+    st.warning("⚠️ Geen coins beschikbaar.")
     st.stop()
 
 # ---------------------------------------------
@@ -131,16 +135,9 @@ for i, (name, ticker) in enumerate(coins):
     df = fetch_ohlcv_yahoo(ticker, period=period, interval=interval)
     if df is None or len(df) < 25:
         results.append({
-            "name": name,
-            "ticker": ticker,
-            "score": 0,
-            "reasons": "no_data",
-            "close": np.nan,
-            "rsi": np.nan,
-            "bb_high": np.nan,
-            "vol": np.nan,
-            "avg_vol": np.nan,
-            "datetime": np.nan,
+            "name": name, "ticker": ticker, "score": 0, "reasons": "no_data",
+            "close": np.nan, "rsi": np.nan, "bb_high": np.nan,
+            "vol": np.nan, "avg_vol": np.nan, "datetime": np.nan,
         })
         continue
 
@@ -167,7 +164,8 @@ status_text.empty()
 # RESULTATEN
 # ---------------------------------------------
 df_out = pd.DataFrame(results)
-df_out = df_out.sort_values(by=["score", "rsi"], ascending=[False, False])
+if "score" in df_out.columns and "rsi" in df_out.columns:
+    df_out = df_out.sort_values(by=["score", "rsi"], ascending=[False, False])
 
 st.subheader("📊 Analyse Resultaten")
 st.dataframe(df_out, use_container_width=True)
